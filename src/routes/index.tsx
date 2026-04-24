@@ -128,6 +128,10 @@ function DualCropTool() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState>(null);
   const spaceRef = useRef(false);
+  const cropARef = useRef(cropA);
+  const cropBRef = useRef(cropB);
+  useEffect(() => { cropARef.current = cropA; }, [cropA]);
+  useEffect(() => { cropBRef.current = cropB; }, [cropB]);
 
   // ----- Load image helpers -----
   const loadFile = useCallback((file: File) => {
@@ -232,10 +236,10 @@ function DualCropTool() {
       if (e.key === "2") setActiveCrop("B");
       if (e.key === "f" || e.key === "F") fitView();
       if (e.key === "s" || e.key === "S") {
-        setCropA((a) => {
-          setCropB(() => a);
-          return cropB;
-        });
+        const a = cropARef.current;
+        const b = cropBRef.current;
+        setCropA(b);
+        setCropB(a);
       }
     };
     const up = (e: KeyboardEvent) => {
