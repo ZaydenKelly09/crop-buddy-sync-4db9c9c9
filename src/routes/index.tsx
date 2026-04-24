@@ -232,8 +232,10 @@ function DualCropTool() {
       if (e.key === "2") setActiveCrop("B");
       if (e.key === "f" || e.key === "F") fitView();
       if (e.key === "s" || e.key === "S") {
-        // swap A & B positions/sizes
-        setCropA((a) => { setCropB(() => a); return cropB; });
+        setCropA((a) => {
+          setCropB(() => a);
+          return cropB;
+        });
       }
     };
     const up = (e: KeyboardEvent) => {
