@@ -15,7 +15,17 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { Upload, Download, Lock, Unlock, Maximize2, Image as ImageIcon } from "lucide-react";
+import {
+  Upload, Download, Lock, Unlock, Maximize2, Image as ImageIcon,
+  ZoomIn, ZoomOut, ArrowLeftRight, RotateCcw, Copy, Link2, Keyboard,
+} from "lucide-react";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import { toast } from "sonner";
+
+const COLOR_A = "hsl(265 90% 70%)"; // purple
+const COLOR_B = "hsl(210 95% 65%)"; // blue
 
 export const Route = createFileRoute("/")({
   component: DualCropTool,
@@ -118,6 +128,10 @@ function DualCropTool() {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState>(null);
   const spaceRef = useRef(false);
+  const cropARef = useRef(cropA);
+  const cropBRef = useRef(cropB);
+  useEffect(() => { cropARef.current = cropA; }, [cropA]);
+  useEffect(() => { cropBRef.current = cropB; }, [cropB]);
 
   // ----- Load image helpers -----
   const loadFile = useCallback((file: File) => {
@@ -221,6 +235,12 @@ function DualCropTool() {
       if (e.key === "1") setActiveCrop("A");
       if (e.key === "2") setActiveCrop("B");
       if (e.key === "f" || e.key === "F") fitView();
+      if (e.key === "s" || e.key === "S") {
+        const a = cropARef.current;
+        const b = cropBRef.current;
+        setCropA(b);
+        setCropB(a);
+      }
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === "Space") spaceRef.current = false;
@@ -252,7 +272,7 @@ function DualCropTool() {
     for (let y = 0; y < wrap.clientHeight; y += tile) {
       for (let x = 0; x < wrap.clientWidth; x += tile) {
         const dark = ((x / tile) + (y / tile)) % 2 === 0;
-        ctx.fillStyle = dark ? "hsl(220 13% 14%)" : "hsl(220 13% 18%)";
+        ctx.fillStyle = dark ? "hsl(265 20% 11%)" : "hsl(265 18% 14%)";
         ctx.fillRect(x, y, tile, tile);
       }
     }
@@ -508,6 +528,59 @@ function DualCropTool() {
     URL.revokeObjectURL(url);
   };
 
+  const copyCrop = async (which: "A" | "B") => {
+    if (!img) return;
+    try {
+      const c = which === "A" ? cropA : cropB;
+      const cv = renderCropToCanvas(c);
+      const blob: Blob = await new Promise((res) => cv.toBlob((b) => res(b!), "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success(`Crop ${which} copied to clipboard`);
+    } catch {
+      toast.error("Clipboard not available in this browser");
+    }
+  };
+
+  const matchSize = (target: "A" | "B") => {
+    if (!img) return;
+    const src = target === "A" ? cropB : cropA;
+    const setter = target === "A" ? setCropA : setCropB;
+    setter((c) => clampCrop({ ...c, w: src.w, h: src.h, ratio: "free" }, img.width, img.height));
+    toast.success(`Crop ${target} sized to match Crop ${target === "A" ? "B" : "A"}`);
+  };
+
+  const swapCrops = () => {
+    const a = cropA, b = cropB;
+    setCropA(b);
+    setCropB(a);
+  };
+
+  const resetCrops = () => {
+    if (!img) return;
+    const a = applyRatio({
+      x: 0, y: 0, w: Math.min(img.width * 0.5, 1920), h: 100,
+      ratio: "16:9", customW: 1920, customH: 1080, locked: false,
+    }, img.width, img.height, "tl");
+    const b = applyRatio({
+      x: 0, y: 0, w: 100, h: Math.min(img.height, 1920),
+      ratio: "9:16", customW: 1080, customH: 1920, locked: false,
+    }, img.width, img.height, "tl");
+    setCropA(a);
+    setCropB(clampCrop({ ...b, x: Math.min(a.w + 20, img.width - b.w) }, img.width, img.height));
+  };
+
+  const zoomBy = (factor: number) => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const cx = wrap.clientWidth / 2;
+    const cy = wrap.clientHeight / 2;
+    const newScale = Math.max(0.05, Math.min(20, scale * factor));
+    const ix = (cx - offset.x) / scale;
+    const iy = (cy - offset.y) / scale;
+    setOffset({ x: cx - ix * newScale, y: cy - iy * newScale });
+    setScale(newScale);
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <header className="border-b px-6 py-3 flex items-center justify-between gap-4">
@@ -524,9 +597,46 @@ function DualCropTool() {
         </div>
         <div className="flex items-center gap-2">
           {img && (
-            <Button variant="outline" size="sm" onClick={() => fitView()}>
-              <Maximize2 className="h-4 w-4 mr-1" /> Fit
-            </Button>
+            <>
+              <div className="hidden sm:flex items-center gap-1 mr-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => zoomBy(1 / 1.2)} title="Zoom out">
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums w-12 text-center">
+                  {Math.round(scale * 100)}%
+                </span>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => zoomBy(1.2)} title="Zoom in">
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => fitView()} title="Fit (F)">
+                <Maximize2 className="h-4 w-4 mr-1" /> Fit
+              </Button>
+              <Button variant="outline" size="sm" onClick={swapCrops} title="Swap A ↔ B (S)">
+                <ArrowLeftRight className="h-4 w-4 mr-1" /> Swap
+              </Button>
+              <Button variant="outline" size="sm" onClick={resetCrops} title="Reset crops">
+                <RotateCcw className="h-4 w-4 mr-1" /> Reset
+              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-8 w-8" title="Keyboard shortcuts">
+                    <Keyboard className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 text-sm">
+                  <div className="font-semibold mb-2">Shortcuts</div>
+                  <ul className="space-y-1 text-muted-foreground">
+                    <li><kbd className="px-1 rounded bg-muted text-foreground">1</kbd> / <kbd className="px-1 rounded bg-muted text-foreground">2</kbd> — switch crop</li>
+                    <li><kbd className="px-1 rounded bg-muted text-foreground">Arrows</kbd> — nudge (Shift = 10px)</li>
+                    <li><kbd className="px-1 rounded bg-muted text-foreground">Space</kbd> + drag — pan</li>
+                    <li><kbd className="px-1 rounded bg-muted text-foreground">Scroll</kbd> — zoom</li>
+                    <li><kbd className="px-1 rounded bg-muted text-foreground">F</kbd> — fit to view</li>
+                    <li><kbd className="px-1 rounded bg-muted text-foreground">S</kbd> — swap A ↔ B</li>
+                  </ul>
+                </PopoverContent>
+              </Popover>
+            </>
           )}
           <label>
             <input type="file" accept="image/*" className="hidden" onChange={onFileInput} />
@@ -572,21 +682,25 @@ function DualCropTool() {
         <aside className="border-l overflow-y-auto p-4 space-y-4 bg-card">
           <CropPanel
             label="Crop A"
-            color="hsl(210 90% 60%)"
+            color={COLOR_A}
             crop={cropA}
             setCrop={setCropA}
             img={img}
             active={activeCrop === "A"}
             onActivate={() => setActiveCrop("A")}
+            onCopy={() => copyCrop("A")}
+            onMatchOther={() => matchSize("A")}
           />
           <CropPanel
             label="Crop B"
-            color="hsl(28 90% 60%)"
+            color={COLOR_B}
             crop={cropB}
             setCrop={setCropB}
             img={img}
             active={activeCrop === "B"}
             onActivate={() => setActiveCrop("B")}
+            onCopy={() => copyCrop("B")}
+            onMatchOther={() => matchSize("B")}
           />
 
           <Separator />
@@ -655,7 +769,7 @@ function drawCrop(
   active: boolean,
   scale: number
 ) {
-  const color = label === "A" ? "hsl(210 90% 60%)" : "hsl(28 90% 60%)";
+  const color = label === "A" ? COLOR_A : COLOR_B;
   ctx.lineWidth = (active ? 2 : 1.25) / scale;
   ctx.strokeStyle = color;
   ctx.strokeRect(c.x, c.y, c.w, c.h);
@@ -711,7 +825,7 @@ function drawCrop(
 }
 
 function CropPanel({
-  label, color, crop, setCrop, img, active, onActivate,
+  label, color, crop, setCrop, img, active, onActivate, onCopy, onMatchOther,
 }: {
   label: string;
   color: string;
@@ -720,6 +834,8 @@ function CropPanel({
   img: HTMLImageElement | null;
   active: boolean;
   onActivate: () => void;
+  onCopy: () => void;
+  onMatchOther: () => void;
 }) {
   const update = (patch: Partial<Crop>) => {
     if (!img) return;
@@ -760,14 +876,37 @@ function CropPanel({
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-sm" style={{ backgroundColor: color }} />
           <span className="font-semibold text-sm">{label}</span>
+          {img && (
+            <span className="text-xs text-muted-foreground">
+              · {((crop.w * crop.h) / (img.width * img.height) * 100).toFixed(1)}% of image
+            </span>
+          )}
         </div>
-        <button
-          className="text-muted-foreground hover:text-foreground"
-          onClick={() => setCrop((c) => ({ ...c, locked: !c.locked }))}
-          title={crop.locked ? "Unlock" : "Lock"}
-        >
-          {crop.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            className="text-muted-foreground hover:text-foreground p-1"
+            onClick={onMatchOther}
+            disabled={!img}
+            title={`Match size to Crop ${label === "Crop A" ? "B" : "A"}`}
+          >
+            <Link2 className="h-4 w-4" />
+          </button>
+          <button
+            className="text-muted-foreground hover:text-foreground p-1"
+            onClick={onCopy}
+            disabled={!img}
+            title="Copy crop to clipboard"
+          >
+            <Copy className="h-4 w-4" />
+          </button>
+          <button
+            className="text-muted-foreground hover:text-foreground p-1"
+            onClick={() => setCrop((c) => ({ ...c, locked: !c.locked }))}
+            title={crop.locked ? "Unlock" : "Lock"}
+          >
+            {crop.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
