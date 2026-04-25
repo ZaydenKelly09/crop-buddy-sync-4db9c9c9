@@ -1,4 +1,3 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
@@ -27,9 +26,9 @@ import { toast } from "sonner";
 const COLOR_A = "hsl(265 90% 70%)"; // purple
 const COLOR_B = "hsl(210 95% 65%)"; // blue
 
-export const Route = createFileRoute("/")({
-  component: DualCropTool,
-});
+export default function DualCropToolPage() {
+  return <DualCropTool />;
+}
 
 type Crop = {
   x: number;
